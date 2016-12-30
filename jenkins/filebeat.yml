@@ -1,0 +1,6 @@
+filebeat.prospectors:
+   - input_type: log
+     paths:
+        - /var/log/jenkins/*.log
+output.logstash:
+   hosts: ["elk:5044"]

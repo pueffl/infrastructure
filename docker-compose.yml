@@ -1,0 +1,52 @@
+version: '2'
+volumes:
+   postgres-sonar-data:
+   jenkins-data:
+services:
+   elk:
+      image: sebp/elk
+      ports:
+         - "5601:5601"
+         - "9200:9200"
+         - "5044:5044"
+   postgres-sonar:
+      image: postgres:latest
+#      build: ./postgres
+      environment:
+         POSTGRES_PASSWORD: sonarqube
+         POSTGRES_USER: sonarqube
+         POSTGRES_DB: sonar
+      ports:
+         - "5432:5432"
+      volumes:
+         - postgres-sonar-data:/var/lib/postgresql/data:Z
+   sonar:
+      depends_on: 
+         - postgres-sonar
+      image: sonarqube:latest
+#      build: ./sonarqube
+      environment:
+         SONARQUBE_JDBC_USERNAME: sonarqube
+         SONARQUBE_JDBC_PASSWORD: sonarqube
+         SONARQUBE_JDBC_URL: jdbc:postgresql://postgres-sonar:5432/sonar
+      ports:
+         - "9000:9000"
+         - "9092:9092"
+   jenkins:
+      image: jenkins:latest
+      depends_on: 
+         - elk
+      ports:
+         - "8080:8080"
+         - "50000:50000"
+      volumes:
+         - jenkins-data:/var/jenkins_home:Z
+      links:
+         - elk:logging
+      logging:
+         driver: gelf
+         options:
+            gelf-address: udp://logging:5601
+
+
+
