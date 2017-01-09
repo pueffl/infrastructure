@@ -1,30 +1,95 @@
-version: '2'
+version: '2.1'
 volumes:
    postgres-sonar-data:
+   postgres-sonar-logs:
+   postgres-redmine-data:
+   postgres-redmine-logs:
    jenkins-data:
+   jenkins-logs:
+   elasticsearch-data:
+   elasticsearch-logs:
+   sonarqube-data:
+   sonarqube-extensions:
+   sonarqube-logs:
+   logstash-logs:
+   kibana-logs:
+networks:
+   redmine:
 services:
-   elk:
-      image: sebp/elk
+   elasticsearch:
+      image: elasticsearch
+      ports:
+         - "9200:9200"
+      volumes:
+# var/lib/elasticsearch/data
+         - elasticsearch-data:/usr/share/elasticsearch/data:z
+         - elasticsearch-logs:/var/log/elasticsearch:z
+   logstash:
+      build: ./logstash
+      ports:
+         - "9600:9600"
+         - "5000:5000"
+         - "5000:5000/udp"
+         - "5044:5044"    
+      depends_on:
+         - elasticsearch
+      volumes:
+         - logstash-logs:/var/log/logstash:z
+   kibana:
+      image: kibana
       ports:
          - "5601:5601"
-         - "9200:9200"
-         - "5044:5044"
+      depends_on:
+         - elasticsearch
+      volumes:
+         - kibana-logs:/var/log/kibana:z
    postgres-sonar:
       image: postgres:latest
-#      build: ./postgres
       environment:
          POSTGRES_PASSWORD: sonarqube
          POSTGRES_USER: sonarqube
          POSTGRES_DB: sonar
       ports:
+         - "5433:5432"
+      volumes:
+         - postgres-sonar-data:/var/lib/postgresql/data:z
+         - postgres-sonar-logs:/var/log/postgresql:z
+   postgres-redmine:
+      image: postgres:latest
+      environment:
+         POSTGRES_PASSWORD: secret
+         POSTGRES_USER: redmine
+         POSTGRES_DB: redmine
+      ports:
          - "5432:5432"
       volumes:
-         - postgres-sonar-data:/var/lib/postgresql/data:Z
+         - postgres-redmine-data:/var/lib/postgresql/data:z
+         - postgres-redmine-logs:/var/log/postgresql:z
+      networks:
+         - redmine
+   redmine:
+      image: redmine:latest
+      ports:
+         - 3000:3000
+      environment:
+         POSTGRES_PORT_5432_TCP: 5432
+         POSTGRES_ENV_POSTGRES_DB: postgres-redmine
+         REDMINE_DB_POSTGRES: postgres-redmine
+         REDMINE_DB_DATABASE: redmine
+         REDMINE_DB_PORT: 5432
+         REDMINE_DB_PASSWORD: secret
+         POSTGRES_ENV_POSTGRES_PASSWORD: secret
+         REDMINE_DB_USERNAME: redmine
+         POSTGRES_ENV_POSTGRES_USER: redmine
+      depends_on:
+         - postgres-redmine
+      networks:
+         - redmine
    sonar:
       depends_on: 
          - postgres-sonar
+         - filebeat
       image: sonarqube:latest
-#      build: ./sonarqube
       environment:
          SONARQUBE_JDBC_USERNAME: sonarqube
          SONARQUBE_JDBC_PASSWORD: sonarqube
@@ -32,21 +97,33 @@ services:
       ports:
          - "9000:9000"
          - "9092:9092"
+      volumes:
+         - sonarqube-data:/opt/sonarqube/data:z
+         - sonarqube-extensions:/opt/sonarqube/extensions:z
+         - sonarqube-logs:/opt/sonarqube/logs:z
    jenkins:
       image: jenkins:latest
-      depends_on: 
-         - elk
       ports:
          - "8080:8080"
-         - "50000:50000"
       volumes:
-         - jenkins-data:/var/jenkins_home:Z
-      links:
-         - elk:logging
-      logging:
-         driver: gelf
-         options:
-            gelf-address: udp://logging:5601
-
-
+         - jenkins-data:/var/jenkins_home:z
+         - jenkins-logs:/var/jenkins_home/logs/:z
+      depends_on:
+         - logstash
+         - filebeat
+#      logging:
+#         driver: syslog
+#         options:
+#            syslog-address: udp://0.0.0.0:5000
+   filebeat:
+      build: ./filebeat
+      depends_on:
+         - logstash
+      environment: 
+         ELASTICSEARCH_HOST: elasticsearch:9200 
+         LOGSTASH_HOST: logstash:5044
+      volumes: 
+         - postgres-sonar-logs:/logs/postgres-sonar:z
+         - sonarqube-logs:/logs/sonarqube:z
+         - jenkins-logs:/logs/jenkins:z
 
